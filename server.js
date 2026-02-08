@@ -587,6 +587,10 @@ const server = http.createServer((req, res) => {
     '.js': 'application/javascript',
     '.css': 'text/css',
     '.map': 'application/json',
+    '.json': 'application/json',
+    '.png': 'image/png',
+    '.svg': 'image/svg+xml',
+    '.ico': 'image/x-icon',
   };
 
   fs.readFile(filePath, (err, content) => {

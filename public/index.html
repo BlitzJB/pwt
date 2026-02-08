@@ -3,7 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#1e1e1e">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="PWT">
   <title>Web Terminal</title>
+  <link rel="manifest" href="/manifest.json">
+  <link rel="apple-touch-icon" href="/icon-192.png">
   <link rel="stylesheet" href="/node_modules/@xterm/xterm/css/xterm.css">
   <style>
     * {
@@ -314,6 +320,14 @@
       padding: 20px;
     }
 
+    #pin-input {
+      position: absolute;
+      opacity: 0;
+      pointer-events: none;
+      width: 1px;
+      height: 1px;
+    }
+
     #pin-overlay.visible {
       display: flex;
     }
@@ -421,6 +435,7 @@
 <body>
   <!-- PIN Pad Overlay -->
   <div id="pin-overlay">
+    <input type="text" id="pin-input" inputmode="numeric" pattern="[0-9]*" autocomplete="off" aria-label="PIN input">
     <div class="pin-title">Enter PIN</div>
     <div class="pin-subtitle">Enter your PIN to continue</div>
     <div class="pin-dots" id="pin-dots"></div>
@@ -549,6 +564,7 @@
     const pinOverlay = document.getElementById('pin-overlay');
     const pinDotsContainer = document.getElementById('pin-dots');
     const pinErrorEl = document.getElementById('pin-error');
+    const pinInputEl = document.getElementById('pin-input');
 
     function showPinPad(length) {
       pinRequired = true;
@@ -556,6 +572,7 @@
       pinInput = '';
       pinLocked = false;
       pinErrorEl.textContent = '';
+      pinInputEl.value = '';
 
       // Create dots
       pinDotsContainer.innerHTML = '';
@@ -566,6 +583,8 @@
       }
 
       pinOverlay.classList.add('visible');
+      // Focus hidden input for keyboard capture (especially Bluetooth keyboards)
+      setTimeout(() => pinInputEl.focus(), 100);
     }
 
     function hidePinPad() {
@@ -622,9 +641,37 @@
       const btn = e.target.closest('.pin-key');
       if (!btn || btn.classList.contains('empty')) return;
       handlePinKey(btn.dataset.key);
+      // Refocus hidden input after button click
+      if (pinRequired) pinInputEl.focus();
     });
 
-    // Keyboard support for PIN pad
+    // Hidden input keyboard support (works with Bluetooth keyboards on mobile)
+    pinInputEl.addEventListener('input', (e) => {
+      const value = e.target.value;
+      // Process only digits, ignore others
+      for (const char of value) {
+        if (/^\d$/.test(char)) {
+          handlePinKey(char);
+        }
+      }
+      e.target.value = '';
+    });
+
+    pinInputEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Backspace') {
+        e.preventDefault();
+        handlePinKey('backspace');
+      }
+    });
+
+    // Keep focus on hidden input when PIN overlay is visible
+    pinOverlay.addEventListener('click', (e) => {
+      if (pinRequired && !e.target.closest('.pin-key')) {
+        pinInputEl.focus();
+      }
+    });
+
+    // Fallback: document-level keyboard support
     document.addEventListener('keydown', (e) => {
       if (!pinRequired) return;
 
@@ -1047,6 +1094,11 @@
     // Initial focus and connect
     terminal.focus();
     connect();
+
+    // Register service worker for PWA
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
   </script>
 </body>
 </html>

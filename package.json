@@ -1,6 +1,6 @@
 {
   "name": "persistent-web-terminal",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "A persistent web-based terminal with xterm.js and dtach",
   "main": "server.js",
   "bin": {

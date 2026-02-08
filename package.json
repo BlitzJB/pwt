@@ -1,0 +1,40 @@
+{
+  "name": "persistent-web-terminal",
+  "version": "1.0.1",
+  "description": "A persistent web-based terminal with xterm.js and dtach",
+  "main": "server.js",
+  "bin": {
+    "pwt": "./server.js"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "postinstall": "node scripts/postinstall.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BlitzJB/pwt.git"
+  },
+  "homepage": "https://github.com/BlitzJB/pwt#readme",
+  "bugs": {
+    "url": "https://github.com/BlitzJB/pwt/issues"
+  },
+  "keywords": [
+    "terminal",
+    "web",
+    "xterm",
+    "pty",
+    "dtach",
+    "persistent"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@ngrok/ngrok": "^1.6.1",
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/addon-web-links": "^0.11.0",
+    "@xterm/xterm": "^5.5.0",
+    "chalk": "^4.1.2",
+    "node-pty": "^1.0.0",
+    "qrcode-terminal": "^0.12.0",
+    "ws": "^8.14.2"
+  }
+}

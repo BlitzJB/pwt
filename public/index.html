@@ -1,0 +1,1052 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Web Terminal</title>
+  <link rel="stylesheet" href="/node_modules/@xterm/xterm/css/xterm.css">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html, body {
+      background: #1e1e1e;
+      height: 100%;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+      /* Fix for mobile browsers where 100vh extends behind address bar */
+      height: 100dvh;
+      height: 100vh; /* fallback */
+    }
+
+    @supports (height: 100dvh) {
+      body {
+        height: 100dvh;
+      }
+    }
+
+    /* Tab bar */
+    #tab-bar {
+      display: flex;
+      align-items: center;
+      background: #252526;
+      border-bottom: 1px solid #3c3c3c;
+      height: 36px;
+      padding-right: 30px;
+      overflow-x: auto;
+      overflow-y: hidden;
+    }
+
+    #tab-bar::-webkit-scrollbar {
+      height: 2px;
+    }
+
+    #tab-bar::-webkit-scrollbar-thumb {
+      background: #555;
+    }
+
+    .tab {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0 12px;
+      height: 100%;
+      background: #2d2d2d;
+      border-right: 1px solid #3c3c3c;
+      color: #888;
+      font-size: 12px;
+      cursor: pointer;
+      white-space: nowrap;
+      min-width: 100px;
+      max-width: 180px;
+      flex-shrink: 0;
+    }
+
+    .tab:hover {
+      background: #323232;
+    }
+
+    .tab.active {
+      background: #1e1e1e;
+      color: #ccc;
+    }
+
+    .tab .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .tab .status-dot.running {
+      background: #4a4;
+    }
+
+    .tab .status-dot.detached {
+      background: #4a4; /* Same as running - process is alive */
+    }
+
+    .tab .status-dot.terminated {
+      background: #666;
+    }
+
+    .tab .tab-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      flex: 1;
+    }
+
+    .tab .menu-btn {
+      width: 16px;
+      height: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 3px;
+      opacity: 0;
+      font-size: 11px;
+      color: #888;
+      letter-spacing: 1px;
+    }
+
+    .tab:hover .menu-btn {
+      opacity: 1;
+    }
+
+    .tab .menu-btn:hover {
+      background: #444;
+      color: #ccc;
+    }
+
+    #new-tab-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      margin: 0 4px;
+      border-radius: 4px;
+      color: #888;
+      font-size: 18px;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    #new-tab-btn:hover {
+      background: #3c3c3c;
+      color: #ccc;
+    }
+
+    #terminal-container {
+      flex: 1;
+      overflow: hidden;
+      width: 100%;
+    }
+
+    #terminal {
+      height: 100%;
+      width: 100%;
+    }
+
+    .xterm {
+      height: 100%;
+      width: 100%;
+    }
+
+    .xterm-screen {
+      width: 100% !important;
+    }
+
+    /* Terminated session overlay */
+    #terminated-overlay {
+      display: none;
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(40, 40, 40, 0.95);
+      padding: 8px 16px;
+      border-radius: 6px;
+      color: #888;
+      font-size: 12px;
+      z-index: 50;
+      border: 1px solid #444;
+    }
+
+    #terminated-overlay.visible {
+      display: block;
+    }
+
+    /* Context menu */
+    #context-menu {
+      display: none;
+      position: fixed;
+      background: #2d2d2d;
+      border: 1px solid #454545;
+      border-radius: 6px;
+      padding: 4px 0;
+      min-width: 140px;
+      z-index: 200;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    }
+
+    #context-menu.visible {
+      display: block;
+    }
+
+    .menu-item {
+      padding: 6px 12px;
+      color: #ccc;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    .menu-item:hover {
+      background: #094771;
+    }
+
+    .menu-item.danger {
+      color: #f44;
+    }
+
+    .menu-item.danger:hover {
+      background: #5a1d1d;
+    }
+
+    .menu-separator {
+      height: 1px;
+      background: #454545;
+      margin: 4px 0;
+    }
+
+    /* Dark mode scrollbar */
+    .xterm-viewport::-webkit-scrollbar {
+      width: 10px;
+      background: #1e1e1e;
+    }
+
+    .xterm-viewport::-webkit-scrollbar-track {
+      background: #1e1e1e;
+    }
+
+    .xterm-viewport::-webkit-scrollbar-thumb {
+      background: #424242;
+      border-radius: 5px;
+      border: 2px solid #1e1e1e;
+    }
+
+    .xterm-viewport::-webkit-scrollbar-thumb:hover {
+      background: #555;
+    }
+
+    .xterm-viewport {
+      scrollbar-width: thin;
+      scrollbar-color: #424242 #1e1e1e;
+    }
+
+    /* Mobile bottom bar - hidden by default, shown when keyboard is open */
+    #mobile-bar {
+      display: none;
+      background: #252526;
+      border-top: 1px solid #3c3c3c;
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      max-width: 100vw;
+      box-sizing: border-box;
+      z-index: 1000;
+      overflow: hidden;
+    }
+
+    #mobile-bar.visible {
+      display: flex;
+    }
+
+    .mobile-btn {
+      flex: 1;
+      padding: 12px 0;
+      background: #252526;
+      border: none;
+      border-right: 1px solid #3c3c3c;
+      color: #ccc;
+      font-size: 13px;
+      font-family: inherit;
+      cursor: pointer;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .mobile-btn:last-child {
+      border-right: none;
+    }
+
+    .mobile-btn:active {
+      background: #3c3c3c;
+    }
+
+    .mobile-btn.active {
+      background: #094771;
+      color: #fff;
+    }
+
+    /* PIN Pad Overlay */
+    #pin-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: #1e1e1e;
+      z-index: 9999;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    #pin-overlay.visible {
+      display: flex;
+    }
+
+    .pin-title {
+      color: #ccc;
+      font-size: 18px;
+      margin-bottom: 8px;
+      font-weight: 500;
+    }
+
+    .pin-subtitle {
+      color: #666;
+      font-size: 13px;
+      margin-bottom: 32px;
+    }
+
+    .pin-dots {
+      display: flex;
+      gap: 16px;
+      margin-bottom: 40px;
+    }
+
+    .pin-dot {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      border: 2px solid #555;
+      background: transparent;
+      transition: background 0.15s, border-color 0.15s;
+    }
+
+    .pin-dot.filled {
+      background: #4ec9b0;
+      border-color: #4ec9b0;
+    }
+
+    .pin-dot.error {
+      border-color: #f44747;
+      animation: shake 0.4s ease-in-out;
+    }
+
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      20%, 60% { transform: translateX(-6px); }
+      40%, 80% { transform: translateX(6px); }
+    }
+
+    .pin-error {
+      color: #f44747;
+      font-size: 13px;
+      margin-bottom: 16px;
+      height: 20px;
+    }
+
+    .pin-pad {
+      display: grid;
+      grid-template-columns: repeat(3, 72px);
+      gap: 16px;
+    }
+
+    .pin-key {
+      width: 72px;
+      height: 72px;
+      border-radius: 50%;
+      border: 1px solid #444;
+      background: #2d2d2d;
+      color: #ccc;
+      font-size: 24px;
+      font-family: inherit;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.1s, transform 0.1s;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+
+    .pin-key:hover {
+      background: #3c3c3c;
+    }
+
+    .pin-key:active {
+      background: #094771;
+      transform: scale(0.95);
+    }
+
+    .pin-key.empty {
+      visibility: hidden;
+    }
+
+    .pin-key.backspace {
+      font-size: 20px;
+    }
+
+    .pin-key.backspace svg {
+      width: 24px;
+      height: 24px;
+      stroke: #ccc;
+      fill: none;
+    }
+  </style>
+</head>
+<body>
+  <!-- PIN Pad Overlay -->
+  <div id="pin-overlay">
+    <div class="pin-title">Enter PIN</div>
+    <div class="pin-subtitle">Enter your PIN to continue</div>
+    <div class="pin-dots" id="pin-dots"></div>
+    <div class="pin-error" id="pin-error"></div>
+    <div class="pin-pad">
+      <button class="pin-key" data-key="1">1</button>
+      <button class="pin-key" data-key="2">2</button>
+      <button class="pin-key" data-key="3">3</button>
+      <button class="pin-key" data-key="4">4</button>
+      <button class="pin-key" data-key="5">5</button>
+      <button class="pin-key" data-key="6">6</button>
+      <button class="pin-key" data-key="7">7</button>
+      <button class="pin-key" data-key="8">8</button>
+      <button class="pin-key" data-key="9">9</button>
+      <button class="pin-key empty"></button>
+      <button class="pin-key" data-key="0">0</button>
+      <button class="pin-key backspace" data-key="backspace">
+        <svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"></path>
+          <line x1="18" y1="9" x2="12" y2="15"></line>
+          <line x1="12" y1="9" x2="18" y2="15"></line>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <div id="tab-bar">
+    <div id="new-tab-btn" title="New Session">+</div>
+  </div>
+  <div id="terminal-container">
+    <div id="terminal"></div>
+  </div>
+  <div id="terminated-overlay">Session terminated (read-only)</div>
+  <div id="mobile-bar">
+    <button class="mobile-btn" data-key="esc">Esc</button>
+    <button class="mobile-btn" data-key="ctrl" id="btn-ctrl">Ctrl</button>
+    <button class="mobile-btn" data-key="shift" id="btn-shift">Shift</button>
+    <button class="mobile-btn" data-key="tab">Tab</button>
+  </div>
+  <div id="context-menu">
+    <div class="menu-item" data-action="rename">Rename</div>
+    <div class="menu-item" data-action="reactivate" id="menu-reactivate">Reactivate</div>
+    <div class="menu-separator"></div>
+    <div class="menu-item danger" data-action="terminate" id="menu-terminate">Terminate</div>
+    <div class="menu-item danger" data-action="delete">Delete</div>
+  </div>
+
+  <script src="/node_modules/@xterm/xterm/lib/xterm.js"></script>
+  <script src="/node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
+  <script src="/node_modules/@xterm/addon-web-links/lib/addon-web-links.js"></script>
+  <script>
+    // Terminal setup
+    const terminal = new Terminal({
+      cursorBlink: true,
+      fontSize: 14,
+      fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+      theme: {
+        background: '#1e1e1e',
+        foreground: '#d4d4d4',
+        cursor: '#d4d4d4',
+        cursorAccent: '#1e1e1e',
+        selectionBackground: '#264f78',
+        black: '#1e1e1e',
+        red: '#f44747',
+        green: '#6a9955',
+        yellow: '#d7ba7d',
+        blue: '#569cd6',
+        magenta: '#c586c0',
+        cyan: '#4ec9b0',
+        white: '#d4d4d4',
+        brightBlack: '#808080',
+        brightRed: '#f44747',
+        brightGreen: '#6a9955',
+        brightYellow: '#d7ba7d',
+        brightBlue: '#569cd6',
+        brightMagenta: '#c586c0',
+        brightCyan: '#4ec9b0',
+        brightWhite: '#ffffff',
+      },
+      allowProposedApi: true,
+    });
+
+    const fitAddon = new FitAddon.FitAddon();
+    const webLinksAddon = new WebLinksAddon.WebLinksAddon();
+
+    terminal.loadAddon(fitAddon);
+    terminal.loadAddon(webLinksAddon);
+    terminal.open(document.getElementById('terminal'));
+    fitAddon.fit();
+
+    // State
+    let ws;
+    let reconnectAttempts = 0;
+    let pingInterval = null;
+    let sessions = [];
+    let currentSessionId = null;
+    let currentSessionStatus = null;
+    let contextMenuTarget = null;
+    let isCreatingSession = false;
+    let needsReattach = false; // Set on reconnect to trigger re-attach
+
+    // PIN authentication state
+    let pinRequired = false;
+    let pinLength = 0;
+    let pinInput = '';
+    let pinLocked = false; // Prevent input while verifying
+
+    // Mobile modifier keys state
+    let ctrlActive = false;
+    let shiftActive = false;
+
+    function updateModifierButtons() {
+      const btnCtrl = document.getElementById('btn-ctrl');
+      const btnShift = document.getElementById('btn-shift');
+      if (btnCtrl) btnCtrl.classList.toggle('active', ctrlActive);
+      if (btnShift) btnShift.classList.toggle('active', shiftActive);
+    }
+
+    function clearModifiers() {
+      ctrlActive = false;
+      shiftActive = false;
+      updateModifierButtons();
+    }
+
+    // PIN pad DOM elements and functions
+    const pinOverlay = document.getElementById('pin-overlay');
+    const pinDotsContainer = document.getElementById('pin-dots');
+    const pinErrorEl = document.getElementById('pin-error');
+
+    function showPinPad(length) {
+      pinRequired = true;
+      pinLength = length;
+      pinInput = '';
+      pinLocked = false;
+      pinErrorEl.textContent = '';
+
+      // Create dots
+      pinDotsContainer.innerHTML = '';
+      for (let i = 0; i < length; i++) {
+        const dot = document.createElement('div');
+        dot.className = 'pin-dot';
+        pinDotsContainer.appendChild(dot);
+      }
+
+      pinOverlay.classList.add('visible');
+    }
+
+    function hidePinPad() {
+      pinRequired = false;
+      pinOverlay.classList.remove('visible');
+      terminal.focus();
+    }
+
+    function updatePinDots() {
+      const dots = pinDotsContainer.querySelectorAll('.pin-dot');
+      dots.forEach((dot, i) => {
+        dot.classList.toggle('filled', i < pinInput.length);
+        dot.classList.remove('error');
+      });
+    }
+
+    function showPinError() {
+      const dots = pinDotsContainer.querySelectorAll('.pin-dot');
+      dots.forEach(dot => dot.classList.add('error'));
+      pinErrorEl.textContent = 'Incorrect PIN';
+      pinInput = '';
+      pinLocked = false;
+      setTimeout(() => {
+        updatePinDots();
+      }, 400);
+    }
+
+    function handlePinKey(key) {
+      if (pinLocked) return;
+
+      if (key === 'backspace') {
+        if (pinInput.length > 0) {
+          pinInput = pinInput.slice(0, -1);
+          updatePinDots();
+        }
+      } else if (/^\d$/.test(key)) {
+        if (pinInput.length < pinLength) {
+          pinInput += key;
+          updatePinDots();
+
+          // Auto-submit when complete
+          if (pinInput.length === pinLength) {
+            pinLocked = true;
+            if (ws && ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ type: 'auth', pin: pinInput }));
+            }
+          }
+        }
+      }
+    }
+
+    // PIN pad click handler
+    document.querySelector('.pin-pad').addEventListener('click', (e) => {
+      const btn = e.target.closest('.pin-key');
+      if (!btn || btn.classList.contains('empty')) return;
+      handlePinKey(btn.dataset.key);
+    });
+
+    // Keyboard support for PIN pad
+    document.addEventListener('keydown', (e) => {
+      if (!pinRequired) return;
+
+      if (e.key === 'Backspace') {
+        e.preventDefault();
+        handlePinKey('backspace');
+      } else if (/^\d$/.test(e.key)) {
+        e.preventDefault();
+        handlePinKey(e.key);
+      }
+    });
+
+    // DOM elements
+    const tabBar = document.getElementById('tab-bar');
+    const newTabBtn = document.getElementById('new-tab-btn');
+    const terminatedOverlay = document.getElementById('terminated-overlay');
+    const contextMenu = document.getElementById('context-menu');
+
+    // Render tabs
+    function renderTabs() {
+      // Remove existing tabs (keep new-tab button)
+      tabBar.querySelectorAll('.tab').forEach(t => t.remove());
+
+      sessions.forEach(session => {
+        const tab = document.createElement('div');
+        tab.className = 'tab' + (session.id === currentSessionId ? ' active' : '');
+        tab.dataset.sessionId = session.id;
+
+        tab.innerHTML = `
+          <span class="status-dot ${session.status}"></span>
+          <span class="tab-name">${escapeHtml(session.name)}</span>
+          <span class="menu-btn">&#8942;</span>
+        `;
+
+        tab.addEventListener('click', (e) => {
+          if (e.target.classList.contains('menu-btn')) {
+            e.stopPropagation();
+            showContextMenuForSession(session.id, e.clientX, e.clientY);
+          } else {
+            attachToSession(session.id);
+          }
+        });
+
+        tab.addEventListener('contextmenu', (e) => {
+          e.preventDefault();
+          showContextMenuForSession(session.id, e.clientX, e.clientY);
+        });
+
+        tabBar.insertBefore(tab, newTabBtn);
+      });
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    function showContextMenuForSession(sessionId, x, y) {
+      contextMenuTarget = sessionId;
+      contextMenu.style.left = x + 'px';
+      contextMenu.style.top = y + 'px';
+
+      // Show/hide reactivate and terminate based on session status
+      const session = sessions.find(s => s.id === sessionId);
+      const isTerminated = session && session.status === 'terminated';
+      document.getElementById('menu-reactivate').style.display = isTerminated ? 'block' : 'none';
+      document.getElementById('menu-terminate').style.display = isTerminated ? 'none' : 'block';
+
+      contextMenu.classList.add('visible');
+    }
+
+    function hideContextMenu() {
+      contextMenu.classList.remove('visible');
+      contextMenuTarget = null;
+    }
+
+    // Session actions
+    function createSession() {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'create' }));
+      }
+    }
+
+    function attachToSession(sessionId) {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        terminal.clear();
+        terminal.reset();
+        ws.send(JSON.stringify({ type: 'attach', sessionId }));
+        // Update URL without reload
+        const url = new URL(window.location);
+        url.searchParams.set('session', sessionId);
+        history.replaceState(null, '', url);
+      }
+    }
+
+    function terminateSession(sessionId) {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'terminate', sessionId }));
+      }
+    }
+
+    function reactivateSession(sessionId) {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'reactivate', sessionId }));
+      }
+    }
+
+    function deleteSession(sessionId) {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'delete', sessionId }));
+        // If we deleted current session, switch to another
+        if (sessionId === currentSessionId) {
+          currentSessionId = null;
+          const remaining = sessions.filter(s => s.id !== sessionId);
+          if (remaining.length > 0) {
+            attachToSession(remaining[0].id);
+          }
+        }
+      }
+    }
+
+    function renameSession(sessionId) {
+      const session = sessions.find(s => s.id === sessionId);
+      const newName = prompt('Rename session:', session ? session.name : '');
+      if (newName && ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'rename', sessionId, name: newName }));
+      }
+    }
+
+    // Update terminated overlay
+    function updateTerminatedOverlay() {
+      if (currentSessionStatus === 'terminated') {
+        terminatedOverlay.classList.add('visible');
+      } else {
+        terminatedOverlay.classList.remove('visible');
+      }
+    }
+
+    // WebSocket connection
+    function connect() {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      ws = new WebSocket(`${protocol}//${window.location.host}`);
+
+      ws.onopen = () => {
+        reconnectAttempts = 0;
+
+        // Reset PIN state on reconnect - server will send auth_required if needed
+        pinRequired = false;
+        pinInput = '';
+        pinLocked = false;
+
+        // If we had a session before disconnect, we need to re-attach
+        if (currentSessionId) {
+          needsReattach = true;
+        }
+
+        // Start heartbeat
+        if (pingInterval) clearInterval(pingInterval);
+        pingInterval = setInterval(() => {
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'ping' }));
+          }
+        }, 30000);
+      };
+
+      ws.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+
+        switch (msg.type) {
+          case 'auth_required':
+            showPinPad(msg.pinLength);
+            break;
+
+          case 'auth_success':
+            hidePinPad();
+            break;
+
+          case 'auth_failed':
+            showPinError();
+            break;
+
+          case 'sessions':
+            sessions = msg.sessions;
+            renderTabs();
+
+            // Check if current session still exists
+            const currentStillExists = currentSessionId && sessions.find(s => s.id === currentSessionId);
+
+            if (sessions.length === 0 && !isCreatingSession) {
+              // No sessions - create one (but only if we're not already creating)
+              isCreatingSession = true;
+              currentSessionId = null;
+              needsReattach = false;
+              terminal.clear();
+              terminal.reset();
+              createSession();
+            } else if (sessions.length > 0 && needsReattach && currentStillExists) {
+              // Reconnected - re-attach to current session
+              needsReattach = false;
+              attachToSession(currentSessionId);
+            } else if (sessions.length > 0 && !currentStillExists) {
+              // Current session was deleted or first load - switch to session
+              needsReattach = false;
+              currentSessionId = null;
+              terminal.clear();
+              terminal.reset();
+              const urlParams = new URLSearchParams(window.location.search);
+              const urlSessionId = urlParams.get('session');
+              const targetSession = urlSessionId && sessions.find(s => s.id === urlSessionId);
+              attachToSession(targetSession ? targetSession.id : sessions[0].id);
+            }
+            break;
+
+          case 'created':
+            // Reset the flag and attach to the new session
+            isCreatingSession = false;
+            setTimeout(() => attachToSession(msg.sessionId), 100);
+            break;
+
+          case 'attached':
+            currentSessionId = msg.sessionId;
+            currentSessionStatus = msg.status;
+            renderTabs();
+            updateTerminatedOverlay();
+            terminal.focus();
+            // Send resize after attach
+            ws.send(JSON.stringify({
+              type: 'resize',
+              cols: terminal.cols,
+              rows: terminal.rows,
+            }));
+            break;
+
+          case 'history':
+            terminal.clear();
+            terminal.reset();
+            if (msg.data) {
+              terminal.write(msg.data);
+            }
+            break;
+
+          case 'output':
+            if (msg.sessionId === currentSessionId) {
+              terminal.write(msg.data);
+            }
+            break;
+
+          case 'terminated':
+            if (msg.sessionId === currentSessionId) {
+              currentSessionStatus = 'terminated';
+              updateTerminatedOverlay();
+            }
+            break;
+
+          case 'reactivated':
+            if (msg.sessionId === currentSessionId) {
+              // Re-attach to get the new PTY connection
+              currentSessionStatus = 'running';
+              updateTerminatedOverlay();
+              ws.send(JSON.stringify({ type: 'attach', sessionId: msg.sessionId }));
+            }
+            break;
+
+          case 'pong':
+            break;
+        }
+      };
+
+      ws.onclose = () => {
+        isCreatingSession = false; // Reset on disconnect
+
+        if (pingInterval) {
+          clearInterval(pingInterval);
+          pingInterval = null;
+        }
+
+        const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 10000);
+        reconnectAttempts++;
+        setTimeout(connect, delay);
+      };
+
+      ws.onerror = () => {
+        ws.close();
+      };
+    }
+
+    // Terminal input
+    terminal.onData((data) => {
+      if (ws && ws.readyState === WebSocket.OPEN && currentSessionStatus !== 'terminated') {
+        let toSend = data;
+        // Apply mobile modifiers
+        if (ctrlActive || shiftActive) {
+          if (data.length === 1) {
+            let char = data;
+            if (shiftActive && char >= 'a' && char <= 'z') {
+              char = char.toUpperCase();
+            }
+            if (ctrlActive) {
+              // Convert to control character (Ctrl+A = 0x01, Ctrl+C = 0x03, etc.)
+              const upper = char.toUpperCase();
+              if (upper >= 'A' && upper <= 'Z') {
+                toSend = String.fromCharCode(upper.charCodeAt(0) - 64);
+              }
+            } else {
+              toSend = char;
+            }
+          }
+          clearModifiers();
+        }
+        ws.send(JSON.stringify({ type: 'input', data: toSend }));
+      }
+    });
+
+    terminal.onResize(({ cols, rows }) => {
+      if (ws && ws.readyState === WebSocket.OPEN && currentSessionId) {
+        ws.send(JSON.stringify({ type: 'resize', cols, rows }));
+      }
+    });
+
+    // Event listeners
+    window.addEventListener('resize', () => {
+      fitAddon.fit();
+    });
+
+    document.getElementById('terminal').addEventListener('click', () => {
+      terminal.focus();
+    });
+
+    newTabBtn.addEventListener('click', () => {
+      createSession();
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!contextMenu.contains(e.target)) {
+        hideContextMenu();
+      }
+    });
+
+    contextMenu.addEventListener('click', (e) => {
+      const action = e.target.dataset.action;
+      if (!action || !contextMenuTarget) return;
+
+      switch (action) {
+        case 'rename':
+          renameSession(contextMenuTarget);
+          break;
+        case 'terminate':
+          terminateSession(contextMenuTarget);
+          break;
+        case 'reactivate':
+          reactivateSession(contextMenuTarget);
+          break;
+        case 'delete':
+          if (confirm('Delete this session permanently?')) {
+            deleteSession(contextMenuTarget);
+          }
+          break;
+      }
+      hideContextMenu();
+    });
+
+    // Mobile bar - modifier key handling
+    document.getElementById('mobile-bar').addEventListener('click', (e) => {
+      const btn = e.target.closest('.mobile-btn');
+      if (!btn) return;
+
+      const key = btn.dataset.key;
+      terminal.focus();
+
+      switch (key) {
+        case 'esc':
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'input', data: '\x1b' }));
+          }
+          clearModifiers();
+          break;
+        case 'tab':
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'input', data: '\t' }));
+          }
+          clearModifiers();
+          break;
+        case 'ctrl':
+          ctrlActive = !ctrlActive;
+          updateModifierButtons();
+          break;
+        case 'shift':
+          shiftActive = !shiftActive;
+          updateModifierButtons();
+          break;
+      }
+    });
+
+    // Detect touch device and add class for CSS
+    if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
+      document.body.classList.add('has-touch');
+    }
+
+    // Show mobile bar only when keyboard is open, position above keyboard
+    const mobileBar = document.getElementById('mobile-bar');
+    if (window.visualViewport) {
+      const onViewportChange = () => {
+        const keyboardHeight = window.innerHeight - visualViewport.height;
+        if (keyboardHeight > 100) {
+          // Keyboard is open - position at bottom of visual viewport
+          mobileBar.classList.add('visible');
+          const bottom = window.innerHeight - visualViewport.height - visualViewport.offsetTop;
+          mobileBar.style.transform = `translateY(${-bottom}px)`;
+        } else {
+          // Keyboard is closed
+          mobileBar.classList.remove('visible');
+          mobileBar.style.transform = '';
+        }
+      };
+      visualViewport.addEventListener('resize', onViewportChange);
+      visualViewport.addEventListener('scroll', onViewportChange);
+    }
+
+    // Initial focus and connect
+    terminal.focus();
+    connect();
+  </script>
+</body>
+</html>

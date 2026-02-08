@@ -4,7 +4,7 @@
   "description": "A persistent web-based terminal with xterm.js and dtach",
   "main": "server.js",
   "bin": {
-    "pwt": "./server.js"
+    "pwt": "server.js"
   },
   "scripts": {
     "start": "node server.js",
